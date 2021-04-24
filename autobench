@@ -26,7 +26,7 @@ use strict;
 use Getopt::Long;
 
 # The location of the master config file
-my $MASTER_CONFIG = "/etc/autobench.conf";
+my $MASTER_CONFIG = "/usr/local/etc/autobench.conf";
 
 # The location of the autobench config file
 my $CONFIG_FILE = $ENV{HOME}."/.autobench.conf";
@@ -81,7 +81,7 @@ get_config
     my %config;
     my $install = 0;
 
-    open (IN,$CONFIG_FILE) 
+    open (IN,$CONFIG_FILE)
 	or $install = 1;
 
     if ($install) {
@@ -89,17 +89,17 @@ get_config
 	print "Installation complete - please rerun autobench\n";
 	exit(0);
     }
-    
+
     while (<IN>) {
 	# Throw away comments and blank lines
 	next if (/^\#.*|^\s+$|^\s+\#|^$/);
-	
+
 	# Check for valid key-value pair and extract key into $1, value into $2
 	unless (/^\s*([a-zA-Z][a-zA-Z_0-9\-]*?)\s*=\s*(\S.*?)\s*$/) {
 	    warn "AUTOBENCH: Warning - invalid line in config file:'$_'";
 	    next;
 	}
-	
+
 	if (defined $config{$1}) {
 	    warn "AUTOBENCH: Warning - parameter '$1' defined more than once,".
 		 "ignoring '$1'='$2'";
@@ -112,7 +112,7 @@ get_config
 
 #--------------------------------------------------------------------------
 # install_new_config($dest)
-# 
+#
 # Installs a copy of the autobench config file into a user's home directory
 
 sub
@@ -126,7 +126,7 @@ install_new_config
 #--------------------------------------------------------------------------
 # test_host ($config_ref, $rate, $server, $uri, $port)
 sub
-test_host 
+test_host
 {
     my ($config_ref, $rate, $server, $uri, $port) = @_;
     my %results;
@@ -137,16 +137,27 @@ test_host
     foreach (keys %$config_ref) {
 	if ( /^httperf_(.*)$/ ) {
             my $hf_val = $$config_ref{$_};
-            $hf_val = ($hf_val eq 'NULL') ? '' : $hf_val; 
+            $hf_val = ($hf_val eq 'NULL') ? '' : $hf_val;
 	    $extra_httperf_opts .= " --".$1." ".$hf_val ;
 	}
     }
     check_present($config_ref, qw(num_conn num_call timeout));
-    my $httperf_command = "httperf --server $server --uri \"$uri\" --num-conn ".
-	  $$config_ref{num_conn}." --num-call ".
-	  $$config_ref{num_call}." --timeout ".
-	  $$config_ref{timeout}." --rate $rate --port $port".
-	  ($extra_httperf_opts || "");
+
+    my ($httperf_command);
+    if ($$config_ref{add_header}) {
+        $httperf_command = "httperf --server $server --uri \"$uri\" --num-conn ".
+          $$config_ref{num_conn}." --num-call ".
+          $$config_ref{num_call}." --timeout ".
+          $$config_ref{timeout}." --rate $rate --port $port".
+          " --add-header \"".$$config_ref{add_header}."\"".
+          ($extra_httperf_opts || "");
+    } else {
+        $httperf_command = "httperf --server $server --uri \"$uri\" --num-conn ".
+          $$config_ref{num_conn}." --num-call ".
+          $$config_ref{num_call}." --timeout ".
+          $$config_ref{timeout}." --rate $rate --port $port".
+          ($extra_httperf_opts || "");
+    }
 
     print STDERR "$httperf_command\n" if $DEBUG;
 
@@ -180,7 +191,7 @@ test_host
 	print $_ unless $$config_ref{quiet};
     }
     close (IN);
-    
+
     if ($results{replies} == 0) {
 	print STDERR "Zero replies received, test invalid: rate $rate\n";
 	$results{percent_errors} = 101;
@@ -191,7 +202,7 @@ test_host
     return \%results;
 }
 
-sub 
+sub
 print_header
 {
     my ($config_ref, $sep, $out_stream) = @_;
@@ -239,7 +250,7 @@ my %config = get_config($CONFIG_FILE);
 GetOptions( \%config, "host1:s","host2:s","uri1:s","uri2:s","port1:i",
             "port2:i","low_rate:i","high_rate:i","rate_step:i","num_conn:i",
             "num_call:i","timeout:i","quiet","single_host","debug",
-	    "output_fmt=s","file=s","version", "const_test_time:i");
+            "output_fmt=s","file=s","version", "const_test_time:i", "add_header:s");
 
 if ($config{version}) {
     print "Autobench $VERSION\nCopyright (C) Julian T. J. Midgley <jtjm\@xenoclast.org> 2003\n";
@@ -259,7 +270,7 @@ else {
 }
 
 # Check that httperf is in our path
-system("which httperf > /dev/null") == 0 
+system("which httperf > /dev/null") == 0
     or die 'Cannot find httperf in $PATH; please ensure it is installed and your PATH is'."\ncorrectly set\n";
 
 # Basic input checking
@@ -273,7 +284,7 @@ if ($config{const_test_time} && $config{const_test_time} < 10) {
     die "--const_test_time must be >= 10. See autobench(1) for details\n";
 }
 
-# Set the output stream correctly 
+# Set the output stream correctly
 if ($config{file}){
     # Filename supplied with --file option, try to open it for writing.
     open(OUT, ">$config{file}") or die "Cannot open $config{file} for writing\n";
@@ -289,7 +300,7 @@ print_header(\%config, $sep, \*OUT);
 
 # Conduct the tests
 
-for ($curr_rate = $config{low_rate}; $curr_rate <= $config{high_rate}; 
+for ($curr_rate = $config{low_rate}; $curr_rate <= $config{high_rate};
      $curr_rate += $config{rate_step}) {
 
     if ($config{const_test_time}) {
@@ -297,11 +308,11 @@ for ($curr_rate = $config{low_rate}; $curr_rate <= $config{high_rate};
     }
     # Test Host 1
     %res_host1 = %{test_host (\%config, $curr_rate, $config{host1}, $config{uri1}, $config{port1})};
-    
+
     # Test Host 2
     unless ( $config{single_host} ) {
 	%res_host2 = %{test_host (\%config, $curr_rate, $config{host2}, $config{uri2}, $config{port2})};
-    } 
+    }
 
     # Merge and Display Results
     $dem_req = ($config{num_call} * $curr_rate);
@@ -327,7 +338,7 @@ for ($curr_rate = $config{low_rate}; $curr_rate <= $config{high_rate};
 	  $res_host2{rep_rate_stdv}.$sep.
 	  $res_host2{rep_time}.$sep.
 	  $res_host2{net_io}.$sep.
-	  $res_host2{percent_errors}."\n";	   
+	  $res_host2{percent_errors}."\n";
     }
 
 }
